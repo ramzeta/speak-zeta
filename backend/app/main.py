@@ -7,7 +7,7 @@ import uuid
 import re
 import time
 
-app = FastAPI(title="Discord Algorito", docs_url=None, redoc_url=None)
+app = FastAPI(title="Speak Zeta", docs_url=None, redoc_url=None)
 
 ALLOWED_ORIGINS = [
     "https://speak-zeta.algorito.io",

@@ -87,13 +87,13 @@ function createDecryptTransform(keyRef) {
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem('discord_algorito_settings');
+    const raw = localStorage.getItem('speak_zeta_settings');
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
 
 function saveSettings(settings) {
-  try { localStorage.setItem('discord_algorito_settings', JSON.stringify(settings)); } catch {}
+  try { localStorage.setItem('speak_zeta_settings', JSON.stringify(settings)); } catch {}
 }
 
 const savedSettings = loadSettings();
@@ -704,7 +704,7 @@ function App() {
     return (
       <div className="login-container">
         <div className="login-box">
-          <h1>Discord Algorito</h1>
+          <h1>Speak Zeta</h1>
           <p>Entra con un nombre de usuario</p>
           <form onSubmit={handleJoin}>
             <input type="text" placeholder="Tu nombre (letras, numeros, - _)..." value={username}
@@ -720,7 +720,7 @@ function App() {
     <div className="app">
       <div className="sidebar">
         <div className="sidebar-header">
-          <h2>Discord Algorito</h2>
+          <h2>Speak Zeta</h2>
           <span className="user-badge">{username}</span>
         </div>
 

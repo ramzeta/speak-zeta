@@ -1,0 +1,15 @@
+{
+  "name": "Speak Zeta",
+  "short_name": "Speak Zeta",
+  "description": "Chat de voz y texto en tiempo real",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1f22",
+  "theme_color": "#5865f2",
+  "orientation": "any",
+  "categories": ["social", "communication"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

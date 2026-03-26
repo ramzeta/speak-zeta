@@ -10,7 +10,7 @@ import time
 app = FastAPI(title="Discord Algorito", docs_url=None, redoc_url=None)
 
 ALLOWED_ORIGINS = [
-    "https://discord.algorito.io",
+    "https://speak-zeta.algorito.io",
     "http://localhost:3000",
 ]
 

@@ -30,6 +30,59 @@ function userColor(name) {
   return colors[Math.abs(h) % colors.length];
 }
 
+// ── E2EE: End-to-End Encryption for voice ──
+
+const E2EE_SUPPORTED = typeof RTCRtpSender !== 'undefined' && !!RTCRtpSender.prototype.createEncodedStreams;
+
+async function deriveE2EEKey(passphrase) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('speak-zeta-e2ee-salt'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+function createEncryptTransform(keyRef) {
+  let counter = 0;
+  return new TransformStream({
+    async transform(frame, controller) {
+      const key = keyRef.current;
+      if (!key) { controller.enqueue(frame); return; }
+      try {
+        const iv = new ArrayBuffer(12);
+        new DataView(iv).setUint32(0, counter++);
+        new DataView(iv).setUint32(4, (Math.random() * 0xFFFFFFFF) >>> 0);
+        const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, frame.data);
+        const out = new Uint8Array(12 + encrypted.byteLength);
+        out.set(new Uint8Array(iv));
+        out.set(new Uint8Array(encrypted), 12);
+        frame.data = out.buffer;
+        controller.enqueue(frame);
+      } catch { controller.enqueue(frame); }
+    }
+  });
+}
+
+function createDecryptTransform(keyRef) {
+  return new TransformStream({
+    async transform(frame, controller) {
+      const key = keyRef.current;
+      if (!key) { controller.enqueue(frame); return; }
+      try {
+        const data = new Uint8Array(frame.data);
+        const iv = data.slice(0, 12).buffer;
+        const encrypted = data.slice(12).buffer;
+        frame.data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+        controller.enqueue(frame);
+      } catch { /* frame corrupted or wrong key - silence */ }
+    }
+  });
+}
+
 // ── Settings persistence ──
 
 function loadSettings() {
@@ -87,6 +140,8 @@ function App() {
   const [pttActive, setPttActive] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [peerVolumes, setPeerVolumes] = useState(savedSettings.peerVolumes || {});
+  const [encryptionPassphrase, setEncryptionPassphrase] = useState('');
+  const [e2eeActive, setE2eeActive] = useState(false);
 
   const ws = useRef(null);
   const voiceWs = useRef(null);
@@ -105,10 +160,24 @@ function App() {
   const pingIntervalRef = useRef(null);
   const pttKeyRef = useRef(pttKey);
   const voiceModeRef = useRef(voiceMode);
+  const encryptionKeyRef = useRef(null);
 
   // Keep refs in sync
   useEffect(() => { pttKeyRef.current = pttKey; }, [pttKey]);
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+
+  // Derive E2EE key from passphrase
+  useEffect(() => {
+    if (encryptionPassphrase.trim()) {
+      deriveE2EEKey(encryptionPassphrase.trim()).then(key => {
+        encryptionKeyRef.current = key;
+        setE2eeActive(true);
+      });
+    } else {
+      encryptionKeyRef.current = null;
+      setE2eeActive(false);
+    }
+  }, [encryptionPassphrase]);
 
   // ── Persist settings on change ──
   useEffect(() => {
@@ -189,11 +258,21 @@ function App() {
   // ── Voice peer connection ──
 
   const createPeerConnection = useCallback((peerId, peerUsername, isInitiator) => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const useE2EE = E2EE_SUPPORTED && !!encryptionKeyRef.current;
+    const pcConfig = { iceServers: ICE_SERVERS };
+    if (useE2EE) pcConfig.encodedInsertableStreams = true;
+
+    const pc = new RTCPeerConnection(pcConfig);
     peerConnections.current[peerId] = pc;
 
     if (localStream.current) {
-      localStream.current.getTracks().forEach(track => pc.addTrack(track, localStream.current));
+      localStream.current.getTracks().forEach(track => {
+        const sender = pc.addTrack(track, localStream.current);
+        if (useE2EE && sender.createEncodedStreams) {
+          const { readable, writable } = sender.createEncodedStreams();
+          readable.pipeThrough(createEncryptTransform(encryptionKeyRef)).pipeTo(writable);
+        }
+      });
     }
 
     pc.onicecandidate = (event) => {
@@ -203,6 +282,10 @@ function App() {
     };
 
     pc.ontrack = (event) => {
+      if (useE2EE && event.receiver.createEncodedStreams) {
+        const { readable, writable } = event.receiver.createEncodedStreams();
+        readable.pipeThrough(createDecryptTransform(encryptionKeyRef)).pipeTo(writable);
+      }
       const audio = new Audio();
       audio.srcObject = event.streams[0];
       audio.autoplay = true;
@@ -712,6 +795,9 @@ function App() {
                 <span className="voice-connected-label">Conectado por voz</span>
                 <span className="voice-channel-name">{voiceRoom}</span>
               </div>
+              {e2eeActive && <span className="e2ee-badge" title="Cifrado de extremo a extremo activo">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="#3ba55d"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
+              </span>}
               {pingMs !== null && <span className={`voice-ping ${pingMs < 100 ? 'good' : pingMs < 200 ? 'ok' : 'bad'}`}>{pingMs}ms</span>}
             </div>
             <div className="voice-buttons">
@@ -795,6 +881,22 @@ function App() {
                     <button className="ptt-key-btn" onKeyDown={(e) => { e.preventDefault(); setPttKey(e.code); }} tabIndex={0}>{pttKey}</button>
                   </div>
                 )}
+                <div className="settings-section">
+                  <label className="settings-label">
+                    Cifrado E2EE
+                    {e2eeActive && <svg viewBox="0 0 24 24" width="14" height="14" fill="#3ba55d" style={{marginLeft:6,verticalAlign:'middle'}}><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>}
+                  </label>
+                  <input type="password" className="settings-select" placeholder="Clave secreta compartida..."
+                    value={encryptionPassphrase} onChange={e => setEncryptionPassphrase(e.target.value)}
+                    autoComplete="off" />
+                  <p className="settings-hint">
+                    {!E2EE_SUPPORTED
+                      ? 'Tu navegador no soporta E2EE (usa Chrome/Edge).'
+                      : e2eeActive
+                        ? 'Audio cifrado con AES-256-GCM. Todos los peers deben usar la misma clave.'
+                        : 'Introduce una clave para cifrar el audio de extremo a extremo. Reconecta al canal despues de cambiarla.'}
+                  </p>
+                </div>
                 <div className="settings-section">
                   <label className="settings-label">Procesamiento de audio</label>
                   <div className="settings-toggles">

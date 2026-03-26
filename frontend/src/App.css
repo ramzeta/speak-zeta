@@ -206,6 +206,11 @@ body {
 .voice-ping.good { color: var(--green); }
 .voice-ping.ok { color: var(--yellow); }
 .voice-ping.bad { color: var(--red); }
+.e2ee-badge {
+  display: flex; align-items: center; justify-content: center;
+  padding: 2px 5px; border-radius: var(--radius-sm);
+  background: rgba(59, 165, 93, 0.15); margin-left: auto;
+}
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

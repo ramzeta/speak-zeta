@@ -1,0 +1,63 @@
+services:
+  discord-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: discord-api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    networks:
+      - discord-internal
+
+  discord-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: discord-frontend
+    restart: unless-stopped
+    depends_on:
+      discord-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+    networks:
+      - discord-internal
+      - web
+
+networks:
+  discord-internal:
+    driver: bridge
+    internal: true
+  web:
+    external: true
